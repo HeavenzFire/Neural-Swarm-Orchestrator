@@ -17,6 +17,7 @@ import { AlertNotification, NotificationToast } from './components/NotificationT
 import { SwarmDaemonService } from './services/swarmDaemon';
 import {
   AgentNode,
+  AutomationEngineState,
   BatchQueueConfig,
   BatchQueueState,
   DaemonState,
@@ -33,6 +34,7 @@ export default function App() {
   const [config, setConfig] = useState<UserConfig>(daemon.getConfig());
   const [batchQueueState, setBatchQueueState] = useState<BatchQueueState>(daemon.getBatchQueueState());
   const [batchConfig, setBatchConfig] = useState<BatchQueueConfig>(daemon.getBatchConfig());
+  const [automationState, setAutomationState] = useState<AutomationEngineState>(daemon.getAutomationState());
   const [activeTab, setActiveTab] = useState<'orchestrator' | 'batch' | 'aws' | 'tests' | 'code'>('orchestrator');
   const [selectedAgentId, setSelectedAgentId] = useState<string>('crok-alpha-01');
   const [isConfigOpen, setIsConfigOpen] = useState(false);
@@ -47,6 +49,7 @@ export default function App() {
       setConfig(daemon.getConfig());
       setBatchQueueState(daemon.getBatchQueueState());
       setBatchConfig(daemon.getBatchConfig());
+      setAutomationState(daemon.getAutomationState());
     });
 
     // Subscribe to real-time notification alerts
@@ -101,12 +104,31 @@ export default function App() {
     daemon.registerAgent(name, type);
   };
 
+  const handleToggleAutomation = () => {
+    daemon.toggleAutomation();
+  };
+
+  const handleSetAutomationCadence = (
+    cadenceMs: number,
+    mode: 'BALANCED' | 'AGGRESSIVE' | 'CONSERVATIVE'
+  ) => {
+    daemon.setAutomationCadence(cadenceMs, mode);
+  };
+
+  const handleImmediateSweep = () => {
+    daemon.triggerImmediateAutonomousSweep();
+  };
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-sky-500 selection:text-white">
       {/* Top Navigation & Status Bar */}
       <Header
         state={daemonState}
+        automation={automationState}
         onTogglePower={handleTogglePower}
+        onToggleAutomation={handleToggleAutomation}
+        onSetCadence={handleSetAutomationCadence}
+        onImmediateSweep={handleImmediateSweep}
         onOpenConfig={() => setIsConfigOpen(true)}
         activeTab={activeTab}
         onChangeTab={setActiveTab}

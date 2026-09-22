@@ -12,12 +12,20 @@ import {
   AlertTriangle,
   Cloud,
   Layers,
+  Zap,
+  Play,
+  Pause,
+  RefreshCw,
 } from 'lucide-react';
-import { DaemonState } from '../types/orchestrator';
+import { AutomationEngineState, DaemonState } from '../types/orchestrator';
 
 interface HeaderProps {
   state: DaemonState;
+  automation: AutomationEngineState;
   onTogglePower: () => void;
+  onToggleAutomation: () => void;
+  onSetCadence: (cadenceMs: number, mode: 'BALANCED' | 'AGGRESSIVE' | 'CONSERVATIVE') => void;
+  onImmediateSweep: () => void;
   onOpenConfig: () => void;
   activeTab: 'orchestrator' | 'batch' | 'aws' | 'tests' | 'code';
   onChangeTab: (tab: 'orchestrator' | 'batch' | 'aws' | 'tests' | 'code') => void;
@@ -26,7 +34,11 @@ interface HeaderProps {
 
 export const Header: React.FC<HeaderProps> = ({
   state,
+  automation,
   onTogglePower,
+  onToggleAutomation,
+  onSetCadence,
+  onImmediateSweep,
   onOpenConfig,
   activeTab,
   onChangeTab,
@@ -35,7 +47,7 @@ export const Header: React.FC<HeaderProps> = ({
   const isOnline = state.status === 'ACTIVE';
 
   return (
-    <header className="border-b border-slate-800 bg-slate-950/80 backdrop-blur-md sticky top-0 z-40">
+    <header className="border-b border-slate-800 bg-slate-950/90 backdrop-blur-md sticky top-0 z-40">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3.5">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           {/* Logo & Subsystem Info */}
@@ -180,6 +192,123 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Autonomous Orchestration Master Bar */}
+      <div className="bg-slate-950/90 border-t border-slate-800/80 px-4 sm:px-6 lg:px-8 py-2">
+        <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-3 text-xs">
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
+              <span className="relative flex h-2.5 w-2.5">
+                {automation.enabled && (
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75"></span>
+                )}
+                <span
+                  className={`relative inline-flex rounded-full h-2.5 w-2.5 ${
+                    automation.enabled ? 'bg-cyan-500' : 'bg-slate-500'
+                  }`}
+                ></span>
+              </span>
+              <span className="font-semibold text-slate-200 flex items-center gap-1.5">
+                <Zap className="w-3.5 h-3.5 text-cyan-400" />
+                <span>Autonomous Engine:</span>
+                <span className={automation.enabled ? 'text-cyan-400 font-mono' : 'text-slate-400 font-mono'}>
+                  {automation.enabled ? 'AUTOMATING ALL PROCESSES' : 'PAUSED'}
+                </span>
+              </span>
+            </div>
+
+            <div className="hidden lg:flex items-center gap-3 text-slate-400 font-mono text-[11px]">
+              <span>
+                Cycles: <strong className="text-white">{automation.cyclesCompleted}</strong>
+              </span>
+              <span>•</span>
+              <span>
+                Auto-Packets: <strong className="text-emerald-400">{automation.packetsAutoRouted}</strong>
+              </span>
+              <span>•</span>
+              <span>
+                Self-Healed: <strong className="text-amber-400">{automation.selfHealsResolved}</strong>
+              </span>
+              <span>•</span>
+              <span>
+                Loop: <strong className="text-sky-300">{automation.cadenceMs}ms</strong>
+              </span>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {/* Cadence Presets */}
+            <div className="inline-flex rounded-lg bg-slate-900 p-0.5 border border-slate-800 text-[11px]">
+              <button
+                onClick={() => onSetCadence(1000, 'AGGRESSIVE')}
+                className={`px-2 py-0.5 rounded font-medium transition-colors ${
+                  automation.mode === 'AGGRESSIVE'
+                    ? 'bg-cyan-600 text-white'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+                title="Fast: 1000ms loop"
+              >
+                Fast (1s)
+              </button>
+              <button
+                onClick={() => onSetCadence(2500, 'BALANCED')}
+                className={`px-2 py-0.5 rounded font-medium transition-colors ${
+                  automation.mode === 'BALANCED'
+                    ? 'bg-cyan-600 text-white'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+                title="Balanced: 2500ms loop"
+              >
+                Normal (2.5s)
+              </button>
+              <button
+                onClick={() => onSetCadence(5000, 'CONSERVATIVE')}
+                className={`px-2 py-0.5 rounded font-medium transition-colors ${
+                  automation.mode === 'CONSERVATIVE'
+                    ? 'bg-cyan-600 text-white'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+                title="Calm: 5000ms loop"
+              >
+                Calm (5s)
+              </button>
+            </div>
+
+            <button
+              id="btn-force-autonomous-sweep"
+              onClick={onImmediateSweep}
+              className="inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium bg-slate-900 hover:bg-slate-800 text-slate-300 rounded border border-slate-800 transition-colors"
+              title="Force immediate automated sweep"
+            >
+              <RefreshCw className="w-3 h-3 text-slate-400" />
+              <span>Sweep Now</span>
+            </button>
+
+            <button
+              id="btn-toggle-automation"
+              onClick={onToggleAutomation}
+              className={`inline-flex items-center gap-1.5 px-3 py-1 text-[11px] font-semibold rounded-lg border transition-all ${
+                automation.enabled
+                  ? 'bg-cyan-950/80 text-cyan-300 border-cyan-800 hover:bg-cyan-900/60'
+                  : 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white border-emerald-500 hover:from-emerald-500 hover:to-teal-500 shadow-sm'
+              }`}
+            >
+              {automation.enabled ? (
+                <>
+                  <Pause className="w-3 h-3 text-cyan-400" />
+                  <span>Pause Automation</span>
+                </>
+              ) : (
+                <>
+                  <Play className="w-3 h-3 fill-current" />
+                  <span>Automate All Processes</span>
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+      </div>
     </header>
   );
 };
+

@@ -6,6 +6,7 @@
 
 import {
   AgentNode,
+  AutomationEngineState,
   AwsInfrastructureState,
   BatchJob,
   BatchJobStatus,
@@ -160,9 +161,26 @@ export class SwarmDaemonService {
     jobs: [],
   };
 
+  private automationState: AutomationEngineState = {
+    enabled: true,
+    cadenceMs: 2500,
+    mode: 'BALANCED',
+    autoHeartbeat: true,
+    autoBatchDrain: true,
+    autoSelfHealing: true,
+    autoContractVerification: false,
+    cyclesCompleted: 0,
+    packetsAutoRouted: 0,
+    selfHealsResolved: 0,
+    lastCycleTimestamp: new Date().toISOString(),
+  };
+
+  private automationTimer: ReturnType<typeof setInterval> | null = null;
+
   private constructor() {
     this.loadPersistedConfig();
     this.initDefaultLogs();
+    this.startAutomationEngine();
   }
 
   public static getInstance(): SwarmDaemonService {
@@ -1108,5 +1126,183 @@ export class SwarmDaemonService {
     this.notify();
     this.drainBatchQueue();
   }
+
+  // =========================================================================
+  // MASTER AUTONOMOUS ENGINE (CONTINUOUS INGESTION, HEARTBEATS & SELF-HEALING)
+  // =========================================================================
+
+  public getAutomationState(): AutomationEngineState {
+    return { ...this.automationState };
+  }
+
+  public toggleAutomation(forceState?: boolean): void {
+    const nextState = forceState !== undefined ? forceState : !this.automationState.enabled;
+    this.automationState.enabled = nextState;
+    if (nextState) {
+      this.startAutomationEngine();
+      this.addLog(
+        'SUCCESS',
+        'AUTONOMOUS-CORE',
+        'AUTOMATION_ENGAGED',
+        'Master Autonomous Engine activated: auto-heartbeat, continuous batch ingestion, and self-healing active.'
+      );
+      this.triggerAlert(
+        'Autonomous Engine Active',
+        'Continuous parallel heartbeats, queue auto-draining, and self-healing loops are running.',
+        'success'
+      );
+    } else {
+      this.stopAutomationEngine();
+      this.addLog(
+        'WARN',
+        'AUTONOMOUS-CORE',
+        'AUTOMATION_PAUSED',
+        'Master Autonomous Engine paused. Switched to manual trigger mode.'
+      );
+      this.triggerAlert('Autonomous Engine Paused', 'Background automation loops suspended.', 'warning');
+    }
+    this.notify();
+  }
+
+  public setAutomationCadence(
+    cadenceMs: number,
+    mode: 'BALANCED' | 'AGGRESSIVE' | 'CONSERVATIVE'
+  ): void {
+    this.automationState.cadenceMs = cadenceMs;
+    this.automationState.mode = mode;
+    if (this.automationState.enabled) {
+      this.stopAutomationEngine();
+      this.startAutomationEngine();
+    }
+    this.addLog(
+      'INFO',
+      'AUTONOMOUS-CORE',
+      'CADENCE_UPDATED',
+      `Automation cadence calibrated to ${cadenceMs}ms (${mode} mode).`
+    );
+    this.notify();
+  }
+
+  public triggerImmediateAutonomousSweep(): void {
+    this.executeAutomationCycle();
+    this.addLog(
+      'INFO',
+      'AUTONOMOUS-CORE',
+      'MANUAL_SWEEP_DISPATCHED',
+      'Immediate autonomous sweep executed across all agent sockets and queue pipelines.'
+    );
+    this.notify();
+  }
+
+  private startAutomationEngine(): void {
+    this.stopAutomationEngine();
+    this.automationTimer = setInterval(() => {
+      this.executeAutomationCycle();
+    }, this.automationState.cadenceMs);
+  }
+
+  private stopAutomationEngine(): void {
+    if (this.automationTimer) {
+      clearInterval(this.automationTimer);
+      this.automationTimer = null;
+    }
+  }
+
+  /**
+   * Executes a single automated heartbeat, self-healing, and queue-draining cycle.
+   */
+  private executeAutomationCycle(): void {
+    if (!this.automationState.enabled) return;
+
+    const now = new Date();
+    this.automationState.cyclesCompleted++;
+    this.automationState.lastCycleTimestamp = now.toISOString();
+
+    // 1. Automated Socket Heartbeat & Telemetry Jitter (if daemon is active)
+    if (this.state.status === 'ACTIVE' && this.automationState.autoHeartbeat) {
+      const activeAgents = this.agents.filter((a) => a.status === 'CONNECTED');
+      this.agents = this.agents.map((agent) => {
+        if (agent.status === 'CONNECTED') {
+          const jitter = Math.floor(Math.random() * 12) - 6;
+          const newLatency = Math.max(12, Math.min(85, agent.latencyMs + jitter));
+          const newSent = agent.messagesSent + Math.floor(Math.random() * 3) + 1;
+          const newReceived = agent.messagesReceived + Math.floor(Math.random() * 3) + 1;
+          return {
+            ...agent,
+            latencyMs: newLatency,
+            messagesSent: newSent,
+            messagesReceived: newReceived,
+            lastSync: 'Just now',
+          };
+        }
+        return agent;
+      });
+
+      this.state.uptimeSeconds += Math.round(this.automationState.cadenceMs / 1000);
+      this.automationState.packetsAutoRouted += activeAgents.length * 2;
+    }
+
+    // 2. Automated Self-Healing (restore unbacked AZs or reconnect dropped agents)
+    if (this.automationState.autoSelfHealing) {
+      if (this.awsInfraState.az1Status === 'UNHEALTHY' || this.awsInfraState.az2Status === 'UNHEALTHY') {
+        this.restoreAzBalance();
+        this.automationState.selfHealsResolved++;
+        this.addLog(
+          'SUCCESS',
+          'AUTONOMOUS-HEAL',
+          'AZ_AUTO_HEALED',
+          'Autonomous watchdog detected degraded Availability Zone and automatically restored healthy dual-AZ active-active balance.'
+        );
+      }
+
+      if (this.state.status === 'ACTIVE') {
+        let healedAgent = false;
+        this.agents = this.agents.map((a) => {
+          if (a.status === 'ERROR' || a.status === 'DISCONNECTED') {
+            healedAgent = true;
+            return {
+              ...a,
+              status: 'CONNECTED',
+              lastSync: 'Just now',
+              encryptionKeyVerified: true,
+            };
+          }
+          return a;
+        });
+        if (healedAgent) {
+          this.automationState.selfHealsResolved++;
+          this.addLog(
+            'SUCCESS',
+            'AUTONOMOUS-HEAL',
+            'AGENT_SOCKET_RECONNECTED',
+            'Autonomous watchdog automatically re-established TLS/TCP handshake on disconnected agent socket.'
+          );
+        }
+      }
+    }
+
+    // 3. Continuous Batch Queue Ingestion & Auto-Draining
+    if (this.automationState.autoBatchDrain && this.state.status === 'ACTIVE') {
+      const qStatus = this.batchQueueState.status;
+      if (qStatus === 'IDLE' || qStatus === 'COMPLETED') {
+        // Automatically schedule next synthetic workload cycle
+        const agentSample = this.agents.map((a) => a.id);
+        const nextBatchNum = this.automationState.cyclesCompleted;
+        this.dispatchBatchHandshake(agentSample, {
+          operationName: `Continuous Ingestion Stream #${nextBatchNum}`,
+          concurrency: Math.min(6, this.agents.length),
+          maxRetries: 2,
+          initialBackoffMs: 400,
+          backoffMultiplier: 1.5,
+          injectChaosRate: 0.15, // Allow self-healing & retry engine to exercise
+        });
+      } else if (qStatus === 'RUNNING') {
+        this.drainBatchQueue();
+      }
+    }
+
+    this.notify();
+  }
 }
+
 

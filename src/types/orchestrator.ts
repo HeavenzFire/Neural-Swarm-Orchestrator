@@ -166,4 +166,18 @@ export interface BatchQueueState {
   jobs: BatchJob[];
 }
 
+export interface AutomationEngineState {
+  enabled: boolean;
+  cadenceMs: number;
+  mode: 'BALANCED' | 'AGGRESSIVE' | 'CONSERVATIVE';
+  autoHeartbeat: boolean;
+  autoBatchDrain: boolean;
+  autoSelfHealing: boolean;
+  autoContractVerification: boolean;
+  cyclesCompleted: number;
+  packetsAutoRouted: number;
+  selfHealsResolved: number;
+  lastCycleTimestamp?: string;
+}
+
 
