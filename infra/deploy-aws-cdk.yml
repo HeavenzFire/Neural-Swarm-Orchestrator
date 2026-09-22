@@ -1,0 +1,115 @@
+name: Deploy Sovereign Swarm AWS Infrastructure (CDK v2)
+
+on:
+  push:
+    branches: [ main, production ]
+    paths:
+      - 'daemon_src/**'
+      - 'infra/**'
+      - '.github/workflows/deploy-aws-cdk.yml'
+  workflow_dispatch:
+    inputs:
+      target_env:
+        description: 'Target AWS Deployment Environment'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+          - staging
+          - production
+
+permissions:
+  id-token: write   # Required for AWS OIDC authentication
+  contents: read    # Required to checkout repository code
+
+jobs:
+  validate-and-test:
+    name: 🧪 Quality Gate & Security Linting
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+
+      - name: 🐍 Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: 📦 Install Python Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install flake8 pytest -r daemon_src/requirements.txt -r infra/requirements.txt
+
+      - name: 🔍 Lint Python Source Code
+        run: |
+          # Stop the build if there are Python syntax errors or undefined names
+          flake8 daemon_src infra --count --select=E9,F63,F7,F82 --show-source --statistics
+
+      - name: 🐳 Validate Docker Container Build
+        run: |
+          docker build -t sovereign-router-daemon:latest daemon_src/
+
+  cdk-synth-and-deploy:
+    name: 🚀 Deploy Multi-AZ AWS Infrastructure
+    needs: validate-and-test
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+
+      - name: 🟢 Set up Node.js 20 (for AWS CDK CLI)
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: 📦 Install AWS CDK CLI
+        run: npm install -g aws-cdk@2
+
+      - name: 🐍 Set up Python 3.12 for CDK
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: 📦 Install CDK Python dependencies
+        run: |
+          pip install -r infra/requirements.txt -r daemon_src/requirements.txt
+
+      - name: 🔐 Authenticate to AWS via OIDC Role
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_CDK_DEPLOY_ROLE_ARN || 'arn:aws:iam::123456789012:role/SovereignCdkDeployerRole' }}
+          role-session-name: GitHubActions-SovereignLattice
+          aws-region: us-east-1
+
+      - name: 🏗️ CDK Bootstrap Verification
+        run: |
+          cd infra
+          cdk bootstrap aws://${{ secrets.AWS_ACCOUNT_ID || '123456789012' }}/us-east-1
+
+      - name: 🔬 Synthesize CloudFormation Template
+        run: |
+          cd infra
+          cdk synth
+
+      - name: 📊 CDK Diff (Infrastructure Drift Detection)
+        run: |
+          cd infra
+          cdk diff || true
+
+      - name: 🚀 Deploy Stack (Zero-Downtime Multi-AZ Rolling Update)
+        run: |
+          cd infra
+          cdk deploy SovereignLatticeStack \
+            --require-approval never \
+            --outputs-file ../cdk-outputs.json
+
+      - name: 🌐 Export NLB Endpoint Artifact
+        run: |
+          echo "=== Sovereign Swarm NLB Deployment Outputs ==="
+          cat cdk-outputs.json
+          NLB_DNS=$(jq -r '.SovereignLatticeStack.LoadBalancerDNS' cdk-outputs.json)
+          echo "PUBLIC_NLB_ENDPOINT=tcp://${NLB_DNS}:8888" >> $GITHUB_ENV
+          echo "🚀 Multi-AZ Network Load Balancer Live at: tcp://${NLB_DNS}:8888"

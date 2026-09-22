@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "version": "1.0.0",
+  "system": {
+    "name": "Sovereign Swarm Lattice",
+    "environment": "local_development",
+    "protocol": "TCP_STREAM_V1",
+    "buffer_delimiter": "\n"
+  },
+  "daemon": {
+    "host": "127.0.0.1",
+    "port": 8888,
+    "backlog": 1024,
+    "max_concurrent_connections": 1000,
+    "socket_timeout_ms": 10000,
+    "keepalive": true,
+    "keepalive_idle_sec": 60,
+    "aws_failover_endpoint": "tcp://sov-nlb-prod-8888.elb.us-east-1.amazonaws.com:8888"
+  },
+  "security": {
+    "encryption_algorithm": "AES-256-GCM",
+    "require_sha3_fingerprint": true,
+    "session_expiry_sec": 86400,
+    "shared_secret_env_var": "SWARM_SHARED_SECRET"
+  },
+  "retry_policy": {
+    "max_retries": 3,
+    "initial_backoff_ms": 500,
+    "backoff_multiplier": 1.5,
+    "max_backoff_ms": 10000
+  },
+  "agents": {
+    "crok-alpha-01": {
+      "type": "crok",
+      "name": "Crok Sovereign Alpha",
+      "family": "crok",
+      "capabilities": ["state-verification", "consensus-anchor", "wasm-decree-enki"],
+      "heartbeat_interval_ms": 3000
+    },
+    "crok-beta-02": {
+      "type": "crok",
+      "name": "Crok Neural Beta",
+      "family": "crok",
+      "capabilities": ["state-verification", "anomaly-telemetry"],
+      "heartbeat_interval_ms": 3000
+    },
+    "qwen-swarm-leader": {
+      "type": "qwen",
+      "name": "Qwen Reasoning Leader",
+      "family": "qwen",
+      "capabilities": ["swarm-leader", "deliberation-mesh", "chronos-sync"],
+      "heartbeat_interval_ms": 4000
+    },
+    "qwen-swarm-worker": {
+      "type": "qwen",
+      "name": "Qwen Task Worker",
+      "family": "qwen",
+      "capabilities": ["inference-pipeline", "batch-dispatch"],
+      "heartbeat_interval_ms": 4000
+    },
+    "copilot-mesh-node-01": {
+      "type": "copilot",
+      "name": "Copilot Code Node 01",
+      "family": "copilot",
+      "capabilities": ["code-synthesis", "ast-verification"],
+      "heartbeat_interval_ms": 5000
+    },
+    "copilot-mesh-node-02": {
+      "type": "copilot",
+      "name": "Copilot Code Node 02",
+      "family": "copilot",
+      "capabilities": ["code-synthesis", "schema-validation"],
+      "heartbeat_interval_ms": 5000
+    }
+  }
+}

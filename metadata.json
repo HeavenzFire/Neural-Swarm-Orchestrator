@@ -1,0 +1,7 @@
+{
+  "name": "Neural Swarm Orchestrator",
+  "description": "Central router daemon orchestrator with batch processing queue, per-node exponential retry engine, AWS Multi-AZ NLB infrastructure, and real-time swarm telemetry.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
+
